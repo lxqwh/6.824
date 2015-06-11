@@ -661,9 +661,42 @@ rpcs::checkduplicate_and_update(unsigned int clt_nonce, unsigned int xid,
 		unsigned int xid_rep, char **b, int *sz)
 {
 	ScopedLock rwl(&reply_window_m_);
-
-        // You fill this in for Lab 1.
-	return NEW;
+	std::list<reply_t>::iterator iter = reply_window_[clt_nonce].begin();
+	bool isForgotten = true;
+    bool isEmpty = reply_window_[clt_nonce].empty();
+	jsl_log(JSL_DBG_2, "rpcs::checkduplicate_and_update request: xid:%u, clt:%u\n", xid, clt_nonce);
+     while(iter != reply_window_[clt_nonce].end()){  
+		reply_t reply = *iter;
+        if(reply.xid < xid_rep)
+		{
+             iter = reply_window_[clt_nonce].erase(iter);
+         }
+		else 
+		{
+             if(reply.xid == xid){
+                 if(reply.cb_present){
+                     *b = reply.buf;
+                     *sz = reply.sz;
+                     return DONE;
+                 }
+                 else return INPROGRESS;
+             }
+             else if(reply.xid < xid){
+                 isForgotten = false;
+             }
+			iter++;
+		}
+			//iter++;	在   iter = reply_window_[clt_nonce].erase(iter);时迭代器已经前进了一位了，如果在自加的话就会遗漏掉一个。果然代码还是要自己琢磨
+	}
+     if(isEmpty || !isForgotten){
+         reply_t reply(xid);
+         reply_window_[clt_nonce].push_back(reply);
+         return NEW;
+     }
+     else { 
+         jsl_log(JSL_DBG_2, "rpcs::checkduplicate_and_update:forgotten,xid:%u, clt:%u\n", xid, clt_nonce);
+         return FORGOTTEN;
+     }
 }
 
 // rpcs::dispatch calls add_reply when it is sending a reply to an RPC,
@@ -677,6 +710,16 @@ rpcs::add_reply(unsigned int clt_nonce, unsigned int xid,
 {
 	ScopedLock rwl(&reply_window_m_);
         // You fill this in for Lab 1.
+		for(std::list<reply_t>::iterator i = reply_window_[clt_nonce].begin();i!=reply_window_[clt_nonce].end();i++)
+	{
+		if((*i).xid == xid)
+		{
+			(*i).buf = b;//是直接是指针还是需要重新分配
+	        (*i).sz = sz;
+	        (*i).cb_present = true;//这个状态怎么给？？？
+			break;
+		}
+	}
 }
 
 void
