@@ -114,7 +114,7 @@ yfs_client::getdir(inum inum, dirinfo &din)
 // - Create an empty extent for ino.
 // - Add a <name, ino> entry into @parent.
 yfs_client::status
-yfs_client::create(inum p_ino, const char* name, inum& new_ino)
+yfs_client::create(inum p_ino, const char* name, inum& new_ino, bool isfile)
 {
   // make sure parent directory exists
   std::string p_dir_str;
@@ -132,23 +132,27 @@ yfs_client::create(inum p_ino, const char* name, inum& new_ino)
 
   // generate a inum for new file
   // TODO: since this is done randomly, we really should try until we succeed
-  new_ino = (rand() & 0xFFFF) | 0x80000000;
+  if(isfile)
+      new_ino = (rand() & 0xFFFF) | 0x80000000;
+  else
+	  new_ino = (rand() & 0xFFFF) & 0x7FFFFFFF;//目录编号
   //printf("new_ino: %s %llX\n", filename(new_ino).c_str(), new_ino);
   d.inum = new_ino;
   std::string dummy;
   if ((ret=ext2yfs(ec->get(new_ino, dummy))) != NOENT) {
     printf("file already exists %s!!\n", yfs_client::filename(new_ino).c_str());
-  }
+  }//不是当前路径，应该无所谓
 
   // create empty extent for new file
-  ret = ext2yfs(ec->put(new_ino, ""));
+  std::string new_file = isfile ? "" : ":";//是文件就直接结束，是目录加":";
+  ret = ext2yfs(ec->put(new_ino, new_file));
   if (ret != OK) {
     return ret;
   }
 
   // add new file to parent directory
   p_dir.add(d);
-  ret = ext2yfs(ec->put(p_ino, p_dir.to_string()));
+  ret = ext2yfs(ec->put(p_ino, p_dir.to_string()));//对于parent而言，目录和文件是一样的
   if (ret != OK) {
     //try to remove the file extent if we failed to update the parent
     ec->remove(new_ino);
@@ -274,6 +278,35 @@ yfs_client::write(inum ino, const char * buf, unsigned int off, unsigned int siz
   return OK;
 }
 
+
+yfs_client::status
+yfs_client::remove(inum p_ino, const char *name){
+	std::string p_dir_str;
+	status ret = ext2yfs(ec->get(p_ino, p_dir_str));
+	if(ret != OK)
+		return ret;
+	yfs_dir p_dir(p_dir_str);
+	dirent d;
+    d.name = std::string(name);
+	if(!p_dir.exists(d.name)){
+		return NOENT;
+	}
+	inum c_ino = p_dir.get(d.name);
+	if(!isfile(c_ino))//判断是否为文件
+	{
+		printf("not allow to unlink dir");
+		return NOENT;
+	}
+
+	p_dir.rem(d.name); //在parent目录里删除
+	ret = ext2yfs(ec->put(p_ino,p_dir.to_string()));//回写目录
+	if(ret != OK)
+	return ret;
+	ret = ext2yfs(ec->remove(c_ino));//会出现parent目录删除成功，但是文件没有删除成功，两者谁先后都会出现一方成功一方未成功的情况
+	return OK;
+}
+
+
 // parse string of directory content
 yfs_dir::yfs_dir(std::string dir){
   if (dir.length() > 1) { //empty dir specified by ":"
@@ -281,8 +314,8 @@ yfs_dir::yfs_dir(std::string dir){
     size_t last_found = 0;
     yfs_client::dirent dirent;
     while (found != std::string::npos) {
-      dirent = yfs_dir::extract_dirent(dir.substr(last_found, found-last_found));
-      dir_[dirent.name] = dirent.inum;
+      dirent = yfs_dir::extract_dirent(dir.substr(last_found, found-last_found));//如果空目录的内容是：那么这里读入了第一个字符，有问题
+      dir_[dirent.name] = dirent.inum;//不是的，这样两个都是0
       last_found = found+1;
       found = dir.find(":", last_found);
     }

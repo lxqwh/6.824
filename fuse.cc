@@ -241,7 +241,7 @@ fuseserver_createhelper(fuse_ino_t parent, const char *name,
   e->generation = 0;
   // You fill this in for Lab 2
   yfs_client::inum new_ino;
-  yfs_client::status ret = yfs->create((yfs_client::inum) parent, name, new_ino);
+  yfs_client::status ret = yfs->create((yfs_client::inum) parent, name, new_ino,true);
   if (ret == yfs_client::OK) {
     e->ino = new_ino;
     struct stat st;
@@ -425,15 +425,24 @@ fuseserver_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
   e.attr_timeout = 0.0;
   e.entry_timeout = 0.0;
   e.generation = 0;
-  // Suppress compiler warning of unused e.
-  (void) e;
-
   // You fill this in for Lab 3
-#if 0
+  yfs_client::inum new_ino;
+  yfs_client::status ret = yfs->create((yfs_client::inum) parent, name, new_ino, false);
+  if (ret == yfs_client::OK) 
+  {
+    e.ino = new_ino;
+    struct stat st;
+    ret = getattr(new_ino, st);
+	
+    if(ret != yfs_client::OK)
+    fuse_reply_err(req, ENOSYS);
+
+    e.attr = st;
+ 
   fuse_reply_entry(req, &e);
-#else
+  }
+  else
   fuse_reply_err(req, ENOSYS);
-#endif
 }
 
 //
@@ -450,7 +459,12 @@ fuseserver_unlink(fuse_req_t req, fuse_ino_t parent, const char *name)
   // You fill this in for Lab 3
   // Success:	fuse_reply_err(req, 0);
   // Not found:	fuse_reply_err(req, ENOENT);
-  fuse_reply_err(req, ENOSYS);
+  yfs_client::inum p_ino = parent;
+  yfs_client::status ret = yfs->remove(p_ino,name);
+  if(ret == yfs_client::NOENT)
+  fuse_reply_err(req, ENOENT);  //如果成功了怎么办，还有remove的返回NOENT好像不只是文件不存在这一种情况
+  else
+  fuse_reply_err(req,0);
 }
 
 void
