@@ -17,6 +17,7 @@
 #include <arpa/inet.h>
 #include "lang/verify.h"
 #include "yfs_client.h"
+#include "lock_client.h"
 
 int myid;
 yfs_client *yfs;
@@ -450,7 +451,7 @@ fuseserver_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
 // Free the file's extent.
 // If the file doesn't exist, indicate error ENOENT.
 //
-// Do *not* allow unlinking of a directory.
+// Do *not* allow unlinking of a directory.//在yfs中获取整个目录然后得到inum后再判断
 //
 void
 fuseserver_unlink(fuse_req_t req, fuse_ino_t parent, const char *name)
@@ -504,6 +505,7 @@ main(int argc, char *argv[])
   myid = random();
 
   yfs = new yfs_client(argv[2], argv[3]);
+ // printf("extern_server dst:%s; lock_server dst:%s", argv[2],argv[3]);
 
   fuseserver_oper.getattr    = fuseserver_getattr;
   fuseserver_oper.statfs     = fuseserver_statfs;

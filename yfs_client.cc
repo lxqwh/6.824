@@ -1,6 +1,7 @@
 // yfs client.  implements FS operations using extent and lock server
 #include "yfs_client.h"
 #include "extent_client.h"
+#include "lock_protocol.h"
 #include "lock_client.h"
 #include <sstream>
 #include <iostream>
@@ -14,6 +15,7 @@
 yfs_client::yfs_client(std::string extent_dst, std::string lock_dst)
 {
   ec = new extent_client(extent_dst);
+  lc = new lock_client(lock_dst);
   // "create" root directory with inum 0x1
   yfs_dir* dir = new yfs_dir("lala 2:po 3:tree 32124:");
   dir->rem("tree");
@@ -80,8 +82,8 @@ yfs_client::getfile(inum inum, fileinfo &fin)
   // - hold and release the file lock
   printf("getfile %s\n", yfs_client::filename(inum).c_str());
   extent_protocol::attr a;
-  status ret = ext2yfs(ec->getattr(inum, a));
 
+  status ret = ext2yfs(ec->getattr(inum, a));
   if (ret == OK) {
     fin.atime = a.atime;
     fin.mtime = a.mtime;
@@ -118,6 +120,8 @@ yfs_client::create(inum p_ino, const char* name, inum& new_ino, bool isfile)
 {
   // make sure parent directory exists
   std::string p_dir_str;
+ // lc->acquire((lock_protocol::lockid_t)(p_ino));
+  ScopedRemoteLock rl(lc,(lock_protocol::lockid_t)p_ino);
   status ret = ext2yfs(ec->get(p_ino, p_dir_str));
   if (ret != OK) {
     return ret;
@@ -132,10 +136,11 @@ yfs_client::create(inum p_ino, const char* name, inum& new_ino, bool isfile)
 
   // generate a inum for new file
   // TODO: since this is done randomly, we really should try until we succeed
-  if(isfile)
-      new_ino = (rand() & 0xFFFF) | 0x80000000;
+ //srand(getpid()); 加了这一句，有些文件无法创建成功，为什么？
+ if(isfile)
+      new_ino = (rand() & 0xFFFFFFFF)| 0x80000000;
   else
-	  new_ino = (rand() & 0xFFFF) & 0x7FFFFFFF;//目录编号
+	  new_ino = rand() & 0x7FFFFFFF;//目录编号
   //printf("new_ino: %s %llX\n", filename(new_ino).c_str(), new_ino);
   d.inum = new_ino;
   std::string dummy;
@@ -145,7 +150,8 @@ yfs_client::create(inum p_ino, const char* name, inum& new_ino, bool isfile)
 
   // create empty extent for new file
   std::string new_file = isfile ? "" : ":";//是文件就直接结束，是目录加":";
-  ret = ext2yfs(ec->put(new_ino, new_file));
+ // ScopedRemoteLock r2(lc,(lock_protocol::lockid_t)new_ino);
+  ret = ext2yfs(ec->put(new_ino, new_file));//不需要锁，接口不可见
   if (ret != OK) {
     return ret;
   }
@@ -155,10 +161,9 @@ yfs_client::create(inum p_ino, const char* name, inum& new_ino, bool isfile)
   ret = ext2yfs(ec->put(p_ino, p_dir.to_string()));//对于parent而言，目录和文件是一样的
   if (ret != OK) {
     //try to remove the file extent if we failed to update the parent
-    ec->remove(new_ino);
+    ec->remove(new_ino);//creat没有返回之前都是安全的，接口不可见
     return ret;
   }
-
   return OK;
 }
 
@@ -169,6 +174,7 @@ yfs_client::lookup(inum p_ino, const char* name, inum& f_ino)
   // - hold and release the directory lock
   // make sure parent directory exists
   std::string p_dir_str;
+//  ScopedRemoteLock rl(lc,(lock_protocol::lockid_t)p_ino);  
   status ret = ext2yfs(ec->get(p_ino, p_dir_str));
   if (ret != OK) {
     return ret;
@@ -187,6 +193,7 @@ yfs_client::status
 yfs_client::getdir_contents(inum ino, yfs_dir** dir)
 {
   std::string dir_str;
+//  ScopedRemoteLock rl(lc,(lock_protocol::lockid_t)ino);
   status ret = ext2yfs(ec->get(ino, dir_str));
   if (ret == OK) {
     printf("getdir_contents found dir %s\n",dir_str.c_str());
@@ -200,6 +207,7 @@ yfs_client::setattr(inum ino, unsigned int new_size)
 {
   printf("yfs_client::setattr %s->%u\n",yfs_client::filename(ino).c_str(), new_size);
   std::string f_data;
+  ScopedRemoteLock rl(lc,(lock_protocol::lockid_t)ino);
   status ret = ext2yfs(ec->get(ino, f_data));
   if (ret != OK) {
     return ret;
@@ -232,6 +240,7 @@ yfs_client::read(inum ino, unsigned int off, unsigned int size, std::string & bu
 {
   printf("yfs_client::read %u %u %s\n",off, size, yfs_client::filename(ino).c_str());
   std::string f_data;
+ // ScopedRemoteLock rl(lc,(lock_protocol::lockid_t)ino);  
   status ret = ext2yfs(ec->get(ino, f_data));
   if (ret != OK) {
     return ret;
@@ -249,6 +258,7 @@ yfs_client::write(inum ino, const char * buf, unsigned int off, unsigned int siz
 {
   printf("yfs_client::write %u %u %s->%s\n",off, size, buf,yfs_client::filename(ino).c_str());
   std::string f_data;
+  ScopedRemoteLock rl(lc,(lock_protocol::lockid_t)ino);
   status ret = ext2yfs(ec->get(ino, f_data));
   if (ret != OK) {
     return ret;
@@ -282,9 +292,11 @@ yfs_client::write(inum ino, const char * buf, unsigned int off, unsigned int siz
 yfs_client::status
 yfs_client::remove(inum p_ino, const char *name){
 	std::string p_dir_str;
+  ScopedRemoteLock rl(lc,(lock_protocol::lockid_t)p_ino);
 	status ret = ext2yfs(ec->get(p_ino, p_dir_str));
-	if(ret != OK)
+	if(ret != OK){
 		return ret;
+	}
 	yfs_dir p_dir(p_dir_str);
 	dirent d;
     d.name = std::string(name);
@@ -301,13 +313,19 @@ yfs_client::remove(inum p_ino, const char *name){
 	p_dir.rem(d.name); //在parent目录里删除
 	ret = ext2yfs(ec->put(p_ino,p_dir.to_string()));//回写目录
 	if(ret != OK)
-	return ret;
+    {
+		return ret;		
+	}
+	lc->acquire((lock_protocol::lockid_t)c_ino);//要加锁，要确保没有在使用中，但是如果只是在被读应该是没关系的
 	ret = ext2yfs(ec->remove(c_ino));//会出现parent目录删除成功，但是文件没有删除成功，两者谁先后都会出现一方成功一方未成功的情况
+	lc->release((lock_protocol::lockid_t)c_ino);	
 	return OK;
 }
 
-
+//*******************************************
+// yfs_dir
 // parse string of directory content
+//*******************************************
 yfs_dir::yfs_dir(std::string dir){
   if (dir.length() > 1) { //empty dir specified by ":"
     size_t found = dir.find(":");
