@@ -25,6 +25,7 @@ lock_server_cache::~lock_server_cache()
 int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id, 
                                int &r)
 {
+  printf("acquire request from id %s for lid %llu\n", id.c_str(), lid);
   lock_protocol::status ret = lock_protocol::OK;
   bool should_revoke = false;
   std::string owner;
@@ -39,6 +40,7 @@ int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id,
       lock_status_[lid].waiting.insert(id);
       r = lock_protocol::RETRY;
   }else{
+      printf("acquire request from id %s for lid %llu sucessfully\n", id.c_str(), lid);
 	  lock_status_[lid].locked = true;
 	  lock_status_[lid].waiting.clear();
 	  lock_status_[lid].owner = id;
@@ -55,6 +57,8 @@ int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id,
   
   return ret;
 }
+
+
 lock_protocol::status lock_server_cache::send_revoke(lock_protocol::lockid_t lid, std::string id){
 	handle h(id);
 	rlock_protocol::status r;
