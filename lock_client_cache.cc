@@ -109,6 +109,8 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
   return lock_protocol::OK;
 }
 
+
+//如果是锁住的，那么释放，设置FREE;如果是RELEASING，那么向服务器释放
 lock_protocol::status
 lock_client_cache::release(lock_protocol::lockid_t lid)
 {
@@ -117,27 +119,106 @@ lock_client_cache::release(lock_protocol::lockid_t lid)
     lockstate lis = lock_status_[lid];
     tprintf("lock_client_cache(%s:%lu): release of lock %llu in state %d\n",
             id.c_str(), pthread_self(), lid, lis);	
+	if(lis == lock_client_cache::LOCKED)
+	{
+		lock_status_[lid] = FREE;
+		VERIFY(pthread_cond_signal(&wait_release_) == 0);
+	}
+	else if(lis == RELEASING){
+		VERIFY(pthread_mutex_unlock(&m_) == 0);
+		lock_protocol::status r;
+		r = cl->call(lock_protocol::release, lid, id, ret);
+		VERIFY(r == lock_protocol::OK);
+		VERIFY(pthread_mutex_lock(&m_) == 0);
+        if (ret != lock_protocol::OK) {
+            tprintf("lock_client_cache(%s:%lu): rls->rls Received unexpected error(%d) for lock %llu\n",
+                    id.c_str(), pthread_self(), ret, lid);
+        }		
+		lock_status_[lid] = NONE;
+		VERIFY(pthread_cond_signal(&wait_release_) == 0);
+	}
+	else{
+	    tprintf("lock_client_cache(%s:%lu): unhandled state (%d) in rls for lock %llu\n",
+                id.c_str(), pthread_self(), lis, lid);	
+	} 
 	
-	
-	
-  return lock_protocol::OK;
+	VERIFY(pthread_mutex_unlock(&m_) == 0);
+    return lock_protocol::OK;
 
 }
 
+
+/*
+
+只有可能是两种情况：
+要么是FREE，直接直接向服务器释放
+要么处于请求或者被使用中，这个时候设置状态进入RELEASING，
+一旦releasing中释放检测到这个状态，那么由它来向服务器释放
+*/
 rlock_protocol::status
 lock_client_cache::revoke_handler(lock_protocol::lockid_t lid, 
                                   int &)
 {
-  int ret = rlock_protocol::OK;
-  return ret;
+  r = rlock_protocol::OK;
+  VERIFY(pthread_mutex_lock(&m_)==0);
+  lockstate lis = lock_status_[lid];
+  tprintf("lock_client_cache(%s:%lu): received revoke of lock %llu in state %d\n",
+          id.c_str(), pthread_self(), lid, lis);
+  switch(lis) {
+    case lock_client_cache::ACQUIRING:
+    case lock_client_cache::WAITING:
+    case lock_client_cache::LOCKED:
+      {
+        lock_status_[lid] = lock_client_cache::RELEASING;
+        break;
+      }
+    case lock_client_cache::FREE:
+      {
+        lock_status_[lid] = lock_client_cache::FREE_RLS;
+
+        VERIFY(pthread_mutex_unlock(&m_)==0);
+        // release lock to lock server
+        lock_protocol::status ret;
+        ret = cl->call(lock_protocol::release, lid, id, r);
+        VERIFY(ret == lock_protocol::OK);
+        VERIFY(pthread_mutex_lock(&m_)==0);
+        if (r != lock_protocol::OK) {
+          tprintf("lock_client_cache(%s:%lu): revoke->rls Received unexpected error(%d) for lock %llu\n",
+                  id.c_str(), pthread_self(), r, lid);
+        }
+        lock_status_[lid] = lock_client_cache::NONE;
+        VERIFY(pthread_cond_signal(&wait_release_)==0);//不会发生的情况
+        break;
+      }
+    default:
+      tprintf("lock_client_cache(%s:%lu): unexpected state (%d) in revoke!\n",
+              id.c_str(), pthread_self(), lis);
+  }
+
+  VERIFY(pthread_mutex_unlock(&m_)==0);
+  return rlock_protocol::OK;
+  
 }
 
+//配合acquire
 rlock_protocol::status
 lock_client_cache::retry_handler(lock_protocol::lockid_t lid, 
                                  int &)
 {
-  int ret = rlock_protocol::OK;
-  return ret;
+  r = rlock_protocol::OK;
+  VERIFY(pthread_mutex_lock(&m_)==0);
+  lockstate lis = lock_status_[lid];
+  tprintf("lock_client_cache(%s:%lu): received retry of lock %llu in state %d\n",
+          id.c_str(), pthread_self(), lid, lis);
+  //Check state
+  if (lis == lock_client_cache::ACQUIRING) {
+    lock_status_[lid] = lock_client_cache::WAITING;
+  } else if (lis == lock_client_cache::WAITING) {
+    lock_status_[lid] = lock_client_cache::ACQUIRING;
+    VERIFY(pthread_cond_signal(&wait_retry_)==0);
+  }
+  VERIFY(pthread_mutex_unlock(&m_)==0);
+  return rlock_protocol::OK;
 }
 
 
