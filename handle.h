@@ -14,12 +14,13 @@
 // if the calling program has not contacted
 // cid before, safebind() will create a new
 // connection, call bind(), and return
-// an rpcc*, or 0 if bind() failed. if the
+// an rpcc*, or 0 if bind() failed. if the 
 // program has previously contacted cid,
 // safebind() just returns the previously
 // created rpcc*. best not to hold any
 // mutexes while calling safebind().
-
+//第一次创建连接，后面都是返回前面创建的连接
+//根据string m(这是server的host:port)来判断，如果已经建立过连接，那么不再连接
 #ifndef handle_h
 #define handle_h
 
@@ -44,7 +45,7 @@ class handle {
   /* safebind will try to bind with the rpc server on the first call.
    * Since bind may block, the caller probably should not hold a mutex
    * when calling safebind.
-   *
+   * 不要加锁
    * return: 
    *   if the first safebind succeeded, all later calls would return
    *   a rpcc object; otherwise, all later calls would return NULL.
@@ -75,5 +76,5 @@ class handle_mgr {
 };
 
 extern class handle_mgr mgr;
-
+//声明了一个外部变量
 #endif
