@@ -112,7 +112,9 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
 lock_protocol::status
 lock_client_cache::release(lock_protocol::lockid_t lid)
 {
-	
+    int ret = rlock_protocol::OK;
+    VERIFY(pthread_mutex_lock(&m_)==0);
+    lockstate lis = lock_status_[lid];
 	
 	
 	
