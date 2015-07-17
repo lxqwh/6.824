@@ -25,6 +25,12 @@ class lock_client_cache : public lock_client {
   int rlock_port;
   std::string hostname;
   std::string id;
+  enum lockstate { NONE, ACQUIRING, WAITING, FREE, LOCKED, RELEASING, FREE_RLS };
+  std::map<lock_protocol::lockid_t, lockstate> lock_status_;
+  pthread_mutex_t m_; //protect lock_status_
+  pthread_cond_t wait_retry_;
+  pthread_cond_t wait_release_;
+  
  public:
   lock_client_cache(std::string xdst, class lock_release_user *l = 0);
   virtual ~lock_client_cache() {};
@@ -35,6 +41,10 @@ class lock_client_cache : public lock_client {
   rlock_protocol::status retry_handler(lock_protocol::lockid_t, 
                                        int &);
 };
-
+struct lock_rls_info {
+  lock_protocol::lockid_t lid;
+  std::string id;
+  rpcc* cl;
+};
 
 #endif
