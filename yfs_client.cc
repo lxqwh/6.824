@@ -2,7 +2,7 @@
 #include "yfs_client.h"
 #include "extent_client.h"
 #include "lock_protocol.h"
-#include "lock_client.h"
+#include "lock_client_cache.h"
 #include <sstream>
 #include <iostream>
 #include <stdio.h>
@@ -15,7 +15,7 @@
 yfs_client::yfs_client(std::string extent_dst, std::string lock_dst)
 {
   ec = new extent_client(extent_dst);
-  lc = new lock_client(lock_dst);
+  lc = new lock_client_cache(lock_dst);
   // "create" root directory with inum 0x1
   yfs_dir* dir = new yfs_dir("lala 2:po 3:tree 32124:");
   dir->rem("tree");

@@ -10,7 +10,7 @@
 #include "tprintf.h"
 
 
-lock_server_cache::lock_server_cache()：nacquire(0)
+lock_server_cache::lock_server_cache():nacquire(0)
 {
   VERIFY(pthread_mutex_init(&m_, 0) == 0);
  
@@ -23,7 +23,7 @@ lock_server_cache::~lock_server_cache()
 
 
 int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id, 
-                               int &)
+                               int &r)
 {
   lock_protocol::status ret = lock_protocol::OK;
   bool should_revoke = false;
@@ -31,7 +31,7 @@ int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id,
   VERIFY(pthread_mutex_lock(&m_)==0);
   if(lock_status_[lid].locked){
 	  if(lock_status_[lid].owner.compare(id) == 0)
-	  tprintf("lock_sever_cache ERROR:%s already has lock lid %llu\n",lid.c_str(),lid);
+	  tprintf("lock_sever_cache ERROR:%s already has lock lid %llu\n",id.c_str(),lid);
       should_revoke = lock_status_[lid].waiting.empty();
 	  if(should_revoke){
 		  owner = lock_status_[lid].owner;
@@ -49,7 +49,7 @@ int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id,
 	  tprintf("sending revoke to %s for lid %llu\n",owner.c_str(),lid);
 	  ret = send_revoke(lid,owner);
 	  if(ret != lock_protocol::OK){
-		  tprintf("ERROR(%d) sending revoke to %s for lid %llu\n"),ret,owner.c_str(),lid);
+		  tprintf("ERROR(%d) sending revoke to %s for lid %llu\n",ret,owner.c_str(),lid);
 	  }
   }
   
@@ -75,7 +75,7 @@ lock_server_cache::release(lock_protocol::lockid_t lid, std::string id,
 {
   lock_protocol::status ret = lock_protocol::OK;
   VERIFY(pthread_mutex_lock(&m_) == 0);
-  tprintf("release require from %s for lock lid &llu\n",id.c_str(),lid);
+  tprintf("release require from %s for lock lid %llu\n",id.c_str(),lid);
   if(!lock_status_[lid].locked)
 	  tprintf("release unlocked lock!\n");
   
@@ -90,7 +90,7 @@ lock_server_cache::release(lock_protocol::lockid_t lid, std::string id,
   VERIFY(pthread_mutex_unlock(&m_)==0);
   
   pthread_t tid;
-  VERIFY(pthread_creat(&tid, NULL, retry_wrapper, (void *)info)==0);
+  VERIFY(pthread_create(&tid, NULL, retry_wrapper, (void *)info)==0);
   r = lock_protocol::OK;
   return ret;
 }

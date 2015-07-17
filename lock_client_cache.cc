@@ -29,6 +29,8 @@ lock_client_cache::lock_client_cache(std::string xdst,
   VERIFY(pthread_cond_init(&wait_release_, 0) == 0);  
 }
 
+
+
 lock_protocol::status
 lock_client_cache::acquire(lock_protocol::lockid_t lid)
 {
@@ -157,7 +159,7 @@ lock_client_cache::release(lock_protocol::lockid_t lid)
 */
 rlock_protocol::status
 lock_client_cache::revoke_handler(lock_protocol::lockid_t lid, 
-                                  int &)
+                                  int &r)
 {
   r = rlock_protocol::OK;
   VERIFY(pthread_mutex_lock(&m_)==0);
@@ -203,9 +205,9 @@ lock_client_cache::revoke_handler(lock_protocol::lockid_t lid,
 //配合acquire
 rlock_protocol::status
 lock_client_cache::retry_handler(lock_protocol::lockid_t lid, 
-                                 int &)
+                                 int &r)
 {
-  r = rlock_protocol::OK;
+  r = rlock_protocol::OK;  
   VERIFY(pthread_mutex_lock(&m_)==0);
   lockstate lis = lock_status_[lid];
   tprintf("lock_client_cache(%s:%lu): received retry of lock %llu in state %d\n",
