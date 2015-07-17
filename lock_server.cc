@@ -29,7 +29,7 @@ lock_protocol::status
 lock_server::acquire(int clt, lock_protocol::lockid_t lid, int &r)
 {
   lock_protocol::status ret = lock_protocol::OK;
-    printf("stat request from clt %d\n", clt);
+    printf("acquire request from clt %d for lid %llu\n", clt, lid);
 //  lockstate lock_state = LOCKFREE;
   pthread_mutex_lock(&lmap_mutex);
   if(tLockMap.count(lid)>0){
@@ -44,7 +44,7 @@ lock_protocol::status
 lock_server::release(int clt, lock_protocol::lockid_t lid, int &r)
 {
   lock_protocol::status ret = lock_protocol::OK;//可以这么用
-    printf("stat request from clt %d\n", clt);
+    printf("release request from clt %d for lid %llu\n", clt, lid);
 //  lockstate lock_state = LOCKFREE;
   pthread_mutex_lock(&lmap_mutex);
   if(tLockMap.count(lid)>0 && tLockMap[lid] == LOCKED ){
