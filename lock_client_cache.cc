@@ -115,7 +115,8 @@ lock_client_cache::release(lock_protocol::lockid_t lid)
     int ret = rlock_protocol::OK;
     VERIFY(pthread_mutex_lock(&m_)==0);
     lockstate lis = lock_status_[lid];
-	
+    tprintf("lock_client_cache(%s:%lu): release of lock %llu in state %d\n",
+            id.c_str(), pthread_self(), lid, lis);	
 	
 	
 	
