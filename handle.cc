@@ -3,7 +3,7 @@
 #include "tprintf.h"
 
 handle_mgr mgr;
-
+//在这里定义（定义还是声明）头文件声明的外部变量
 handle::handle(std::string m) 
 {
   h = mgr.get_handle(m);
@@ -103,7 +103,7 @@ handle_mgr::delete_handle_wo(std::string m)
       hmap.erase(m);
       delete h;
     } else {
-      h->del = true;
+      h->del = true;//只在创建的时候是false，一旦被标记成false就无法恢复，这时候就无法再被分配了，虽然它还没被销毁；只能等到ref为0时被释放资源
     }
   }
 }
